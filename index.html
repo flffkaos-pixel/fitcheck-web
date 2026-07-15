@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자세 교정 - 실시간 피드백</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; }
+.container { max-width: 960px; margin: 0 auto; padding: 20px; }
+h1 { font-size: 1.5rem; margin-bottom: 8px; color: #f8fafc; }
+.subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.9rem; }
+.video-wrap { position: relative; width: 100%; max-width: 640px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #1e293b; }
+video, canvas { width: 100%; display: block; }
+canvas { position: absolute; top: 0; left: 0; }
+.status { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 20px; justify-content: center; }
+.card { background: #1e293b; border-radius: 10px; padding: 16px 20px; min-width: 140px; text-align: center; border: 1px solid #334155; }
+.card .label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+.card .value { font-size: 1.25rem; font-weight: 700; margin-top: 4px; }
+.card .good { color: #22c55e; }
+.card .warn { color: #eab308; }
+.card .bad { color: #ef4444; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 24px; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; transition: all .2s; margin-top: 16px; }
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.feedback { margin-top: 16px; font-size: 1.1rem; text-align: center; min-height: 2em; padding: 12px; border-radius: 8px; }
+.feedback.good { background: #14532d; color: #4ade80; }
+.feedback.warn { background: #422006; color: #facc15; }
+.feedback.bad { background: #450a0a; color: #f87171; }
+.controls { text-align: center; }
+#overall-score { font-size: 2.5rem; font-weight: 800; }
+.loading { text-align: center; padding: 80px 20px; color: #94a3b8; }
+.spinner { width: 40px; height: 40px; border: 3px solid #334155; border-top-color: #3b82f6; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.hidden { display: none; }
+a { color: #60a5fa; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.nav { display: flex; gap: 16px; justify-content: center; margin-bottom: 24px; }
+.nav a { padding: 6px 16px; border-radius: 6px; background: #1e293b; color: #94a3b8; font-size: 0.85rem; }
+.nav a.active { background: #3b82f6; color: #fff; }
+.detail-list { margin-top: 12px; text-align: left; list-style: none; }
+.detail-list li { padding: 4px 0; font-size: 0.85rem; color: #94a3b8; display: flex; justify-content: space-between; }
+.detail-list li span { color: #e2e8f0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav">
+    <a href="/" class="active">자세 교정</a>
+    <a href="/food/">식단 분석</a>
+  </div>
+  <h1>자세 교정 실시간 피드백</h1>
+  <p class="subtitle">웹캠으로 자세 분석 &middot; 결과는 서버에 저장되지 않습니다</p>
+
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <p>모델 로딩 중...</p>
+  </div>
+
+  <div id="app" class="hidden">
+    <div class="video-wrap">
+      <video id="video" playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="controls">
+      <button id="btn-start" class="btn btn-primary">카메라 시작</button>
+      <button id="btn-stop" class="btn btn-danger hidden">중지</button>
+    </div>
+
+    <div id="feedback" class="feedback">카메라를 시작하면 자세 분석이 시작됩니다</div>
+
+    <div class="status" id="status-cards">
+      <div class="card"><div class="label">종합 점수</div><div class="value" id="overall-score">-</div></div>
+      <div class="card"><div class="label">머리 기울기</div><div class="value" id="head-tilt">-</div></div>
+      <div class="card"><div class="label">어깨 높이</div><div class="value" id="shoulder-level">-</div></div>
+      <div class="card"><div class="label">거북목</div><div class="value" id="forward-head">-</div></div>
+    </div>
+
+    <ul class="detail-list" id="detail-list"></ul>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.js" crossorigin="anonymous"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const loading = document.getElementById('loading');
+const app = document.getElementById('app');
+const feedback = document.getElementById('feedback');
+const btnStart = document.getElementById('btn-start');
+const btnStop = document.getElementById('btn-stop');
+
+let camera = null;
+let isRunning = false;
+
+const scoreEl = document.getElementById('overall-score');
+const headTiltEl = document.getElementById('head-tilt');
+const shoulderLevelEl = document.getElementById('shoulder-level');
+const forwardHeadEl = document.getElementById('forward-head');
+const detailList = document.getElementById('detail-list');
+
+function deg(a, b) {
+  return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+}
+
+function dist(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function round(v) { return Math.round(v * 10) / 10; }
+
+function analyze(landmarks) {
+  const earL = landmarks[7], earR = landmarks[8];
+  const shL = landmarks[11], shR = landmarks[12];
+  const nose = landmarks[0];
+  const hipL = landmarks[23], hipR = landmarks[24];
+
+  const shMid = { x: (shL.x + shR.x) / 2, y: (shL.y + shR.y) / 2, z: (shL.z + shR.z) / 2 };
+  const earMid = { x: (earL.x + earR.x) / 2, y: (earL.y + earR.y) / 2, z: (earL.z + earR.z) / 2 };
+  const hipMid = { x: (hipL.x + hipR.x) / 2, y: (hipL.y + hipR.y) / 2, z: (hipL.z + hipR.z) / 2 };
+
+  // Head tilt: angle of ear-ear line vs horizontal
+  const tiltAngle = Math.abs(deg(earL, earR));
+  let headTiltScore, headTiltText;
+  if (tiltAngle < 5) { headTiltScore = 100; headTiltText = '✅ 정상'; }
+  else if (tiltAngle < 12) { headTiltScore = 70; headTiltText = '⚠️ 약간 기울어짐'; }
+  else { headTiltScore = 30; headTiltText = '❌ 많이 기울어짐'; }
+
+  // Shoulder level: angle of shoulder-shoulder line vs horizontal
+  const shAngle = Math.abs(deg(shL, shR));
+  let shScore, shText;
+  if (shAngle < 5) { shScore = 100; shText = '✅ 수평'; }
+  else if (shAngle < 12) { shScore = 70; shText = '⚠️ 약간 비대칭'; }
+  else { shScore = 30; shText = '❌ 많이 비대칭'; }
+
+  // Forward head: horizontal distance nose to shoulder midline relative to reference
+  // Normal: nose roughly above shoulder midline. Far forward = turtle neck.
+  const noseToSh = dist(nose, shMid);
+  const noseToHip = dist(nose, hipMid);
+  const ratio = noseToSh / (noseToHip || 0.001);
+  let fhScore, fhText;
+  if (ratio < 0.35) { fhScore = 100; fhText = '✅ 정상'; }
+  else if (ratio < 0.5) { fhScore = 65; fhText = '⚠️ 약간 거북목'; }
+  else { fhScore = 25; fhText = '❌ 거북목 의심'; }
+
+  // Overall
+  const total = Math.round((headTiltScore + shScore + fhScore) / 3);
+
+  const details = [
+    { label: '머리 기울기', score: headTiltScore, status: headTiltText, tip: '턱을 당기고 귀를 어깨 위에 정렬하세요' },
+    { label: '어깨 높이', score: shScore, status: shText, tip: '양쪽 어깨 높이를 맞추고 가슴을 펴세요' },
+    { label: '거북목', score: fhScore, status: fhText, tip: '모니터 높이를 눈높이로 올리고 턱을 살짝 당기세요' },
+  ];
+
+  return { total, details, headTiltScore, shScore, fhScore, shMid, earMid, hipMid };
+}
+
+function drawResults(landmarks, results) {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw skeleton
+  const connections = [
+    [11,12],[12,24],[24,23],[23,11],[11,13],[13,15],[12,14],[14,16],
+    [23,25],[25,27],[24,26],[26,28],[11,5],[12,6],[5,0],[6,0],
+    [7,0],[8,0],[7,8],[0,1],[1,2],[2,3],[3,4],[0,5],[0,6]
+  ];
+
+  ctx.strokeStyle = 'rgba(59,130,246,0.7)';
+  ctx.lineWidth = 2;
+  for (const [i, j] of connections) {
+    if (landmarks[i].visibility < 0.5 || landmarks[j].visibility < 0.5) continue;
+    ctx.beginPath();
+    ctx.moveTo(landmarks[i].x * w, landmarks[i].y * h);
+    ctx.lineTo(landmarks[j].x * w, landmarks[j].y * h);
+    ctx.stroke();
+  }
+
+  // Draw landmarks
+  for (const lm of landmarks) {
+    if (lm.visibility < 0.5) continue;
+    ctx.beginPath();
+    ctx.arc(lm.x * w, lm.y * h, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = '#3b82f6';
+    ctx.fill();
+  }
+
+  // Draw score overlay
+  ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+  ctx.globalAlpha = 0.8;
+  ctx.fillRect(10, 10, 160, 60);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '14px sans-serif';
+  ctx.fillText(`점수: ${results.total}점`, 20, 32);
+  ctx.fillStyle = results.total >= 80 ? '#22c55e' : results.total >= 55 ? '#eab308' : '#ef4444';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(results.total >= 80 ? '좋은 자세' : results.total >= 55 ? '주의 필요' : '교정 필요', 20, 52);
+}
+
+function updateUI(results) {
+  scoreEl.textContent = results.total;
+  scoreEl.className = 'value ' + (results.total >= 80 ? 'good' : results.total >= 55 ? 'warn' : 'bad');
+
+  headTiltEl.textContent = results.details[0].status;
+  headTiltEl.className = 'value ' + (results.headTiltScore >= 80 ? 'good' : results.headTiltScore >= 55 ? 'warn' : 'bad');
+
+  shoulderLevelEl.textContent = results.details[1].status;
+  shoulderLevelEl.className = 'value ' + (results.shScore >= 80 ? 'good' : results.shScore >= 55 ? 'warn' : 'bad');
+
+  forwardHeadEl.textContent = results.details[2].status;
+  forwardHeadEl.className = 'value ' + (results.fhScore >= 80 ? 'good' : results.fhScore >= 55 ? 'warn' : 'bad');
+
+  detailList.innerHTML = results.details.map(d => `
+    <li><span>${d.label}</span> <span>${d.status} (${round(d.score)})</span></li>
+  `).join('');
+
+  feedback.textContent = results.details.find(d => d.score < 55)?.tip || '좋은 자세를 유지하고 있습니다!';
+  feedback.className = 'feedback ' + (results.total >= 80 ? 'good' : results.total >= 55 ? 'warn' : 'bad');
+}
+
+function onResults(results) {
+  if (!results.poseLandmarks) return;
+  canvas.width = results.image.width;
+  canvas.height = results.image.height;
+
+  const analyzed = analyze(results.poseLandmarks);
+  drawResults(results.poseLandmarks, analyzed);
+  if (isRunning) updateUI(analyzed);
+}
+
+const pose = new Pose({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${file}`
+});
+
+pose.setOptions({
+  modelComplexity: 1,
+  smoothLandmarks: true,
+  enableSegmentation: false,
+  smoothSegmentation: false,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5
+});
+
+pose.onResults(onResults);
+
+btnStart.addEventListener('click', async () => {
+  btnStart.disabled = true;
+  btnStart.classList.add('hidden');
+  btnStop.classList.remove('hidden');
+  isRunning = true;
+
+  camera = new Camera(video, {
+    onFrame: async () => {
+      try { await pose.send({ image: video }); } catch (e) {}
+    },
+    width: 640,
+    height: 480
+  });
+  await camera.start();
+
+  // Auto-stop when tab hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && camera) {
+      camera.stop();
+    } else if (!document.hidden && isRunning && camera) {
+      camera.start().catch(() => {});
+    }
+  });
+});
+
+btnStop.addEventListener('click', () => {
+  isRunning = false;
+  if (camera) { camera.stop(); camera = null; }
+  btnStart.disabled = false;
+  btnStart.classList.remove('hidden');
+  btnStop.classList.add('hidden');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  feedback.textContent = '카메라가 중지되었습니다';
+  feedback.className = 'feedback';
+  scoreEl.textContent = '-'; scoreEl.className = 'value';
+  headTiltEl.textContent = '-'; headTiltEl.className = 'value';
+  shoulderLevelEl.textContent = '-'; shoulderLevelEl.className = 'value';
+  forwardHeadEl.textContent = '-'; forwardHeadEl.className = 'value';
+  detailList.innerHTML = '';
+});
+
+// Model warmup
+loading.classList.remove('hidden');
+pose.initialize().then(() => {
+  loading.classList.add('hidden');
+  app.classList.remove('hidden');
+  feedback.textContent = '카메라를 시작하면 자세 분석이 시작됩니다';
+}).catch(e => {
+  loading.innerHTML = `<p>모델 로드 실패: ${e.message}</p>`;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>식단 사진 → 칼로리 분석</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; }
+.container { max-width: 800px; margin: 0 auto; padding: 20px; }
+h1 { font-size: 1.5rem; margin-bottom: 8px; }
+.subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.9rem; }
+.nav { display: flex; gap: 16px; justify-content: center; margin-bottom: 24px; }
+.nav a { padding: 6px 16px; border-radius: 6px; background: #1e293b; color: #94a3b8; font-size: 0.85rem; text-decoration: none; }
+.nav a.active { background: #3b82f6; color: #fff; }
+.main-card { background: #1e293b; border-radius: 12px; padding: 24px; border: 1px solid #334155; margin-bottom: 20px; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.photo-area { flex: 1; min-width: 240px; }
+.photo-box { border: 2px dashed #475569; border-radius: 10px; height: 240px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; background-size: cover; background-position: center; position: relative; }
+.photo-box:hover { border-color: #60a5fa; background: #1e293b; }
+.photo-box.has-photo { border-style: solid; border-color: #334155; }
+.photo-box .hint { text-align: center; color: #64748b; }
+.photo-box .hint svg { width: 40px; height: 40px; margin-bottom: 8px; stroke: #64748b; fill: none; stroke-width: 1.5; }
+.photo-box input { display: none; }
+.photo-box .remove-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; display: none; }
+.photo-box.has-photo .remove-btn { display: flex; align-items: center; justify-content: center; }
+.input-area { flex: 1; min-width: 200px; }
+.input-area label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 6px; }
+.input-area input[type="text"] { width: 100%; padding: 10px 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 1rem; margin-bottom: 12px; }
+.input-area input[type="text"]:focus { outline: none; border-color: #3b82f6; }
+.suggestions { background: #0f172a; border: 1px solid #334155; border-radius: 8px; max-height: 180px; overflow-y: auto; display: none; position: absolute; width: calc(100% - 2px); z-index: 10; }
+.suggestions div { padding: 8px 14px; cursor: pointer; font-size: 0.9rem; }
+.suggestions div:hover { background: #1e293b; }
+.suggestions .active { background: #1e293b; }
+.input-wrap { position: relative; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 24px; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; transition: all .2s; }
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: #334155; color: #e2e8f0; }
+.btn-secondary:hover { background: #475569; }
+.btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+.actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Result */
+.result { display: none; }
+.result.show { display: block; }
+.result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #334155; }
+.result-header .title { font-size: 1.1rem; font-weight: 700; }
+.result-header .cal { font-size: 1.5rem; font-weight: 800; color: #22c55e; }
+.nutrition-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
+.nutrition-item { background: #0f172a; border-radius: 8px; padding: 12px; text-align: center; }
+.nutrition-item .val { font-size: 1.1rem; font-weight: 700; }
+.nutrition-item .lbl { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+.nutrition-item .protein { color: #f97316; }
+.nutrition-item .fat { color: #eab308; }
+.nutrition-item .carbs { color: #22c55e; }
+.nutrition-item .fiber { color: #a855f7; }
+.nutrition-item .sugar { color: #ef4444; }
+.meal-total { margin-top: 20px; padding: 16px; background: #0f172a; border-radius: 10px; }
+.meal-total h3 { font-size: 0.9rem; color: #94a3b8; margin-bottom: 8px; }
+.meal-total .totals { display: flex; gap: 24px; flex-wrap: wrap; }
+.meal-total .totals > div { text-align: center; }
+.meal-total .totals .v { font-size: 1.3rem; font-weight: 700; }
+.meal-total .totals .l { font-size: 0.75rem; color: #64748b; }
+
+.added-foods { margin-top: 12px; }
+.added-food { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #0f172a; border-radius: 6px; margin-bottom: 6px; font-size: 0.9rem; }
+.added-food .name { display: flex; align-items: center; gap: 8px; }
+.added-food .remove { color: #ef4444; cursor: pointer; font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; }
+.added-food .remove:hover { background: #450a0a; }
+
+.history { margin-top: 24px; }
+.history h2 { font-size: 1.1rem; margin-bottom: 12px; color: #94a3b8; }
+.history-entry { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #1e293b; font-size: 0.85rem; }
+.history-entry .time { color: #64748b; }
+.history-entry .cals { color: #22c55e; font-weight: 600; }
+.history-empty { color: #64748b; font-size: 0.85rem; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav">
+    <a href="/">자세 교정</a>
+    <a href="/food/" class="active">식단 분석</a>
+  </div>
+  <h1>식단 사진 → 칼로리·영양소 분석</h1>
+  <p class="subtitle">음식 사진을 업로드하고 이름을 선택하면 영양정보를 확인합니다</p>
+
+  <div class="main-card">
+    <div class="row">
+      <div class="photo-area">
+        <div class="photo-box" id="photo-box" onclick="document.getElementById('photo-input').click()">
+          <input type="file" accept="image/*" id="photo-input" capture="environment">
+          <div class="hint" id="photo-hint">
+            <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <p>사진 업로드</p>
+          </div>
+          <button class="remove-btn" id="remove-photo" onclick="event.stopPropagation();removePhoto()">✕</button>
+        </div>
+      </div>
+      <div class="input-area">
+        <label for="food-input">음식 이름</label>
+        <div class="input-wrap">
+          <input type="text" id="food-input" placeholder="예: 김치찌개, 불고기, 라면..." autocomplete="off">
+          <div class="suggestions" id="suggestions"></div>
+        </div>
+        <label for="serving-input" style="margin-top:8px">1회 섭취량</label>
+        <select id="serving-input" style="width:100%;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:1rem;">
+          <option value="0.5">반 인분 (0.5x)</option>
+          <option value="1" selected>1 인분 (1x)</option>
+          <option value="1.5">1.5 인분 (1.5x)</option>
+          <option value="2">2 인분 (2x)</option>
+          <option value="3">3 인분 (3x)</option>
+        </select>
+        <div class="actions">
+          <button class="btn btn-primary" id="btn-add">식단에 추가</button>
+          <button class="btn btn-secondary btn-sm" id="btn-ai" title="AI 자동 인식 (Hugging Face)">🤖 AI 인식</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-card">
+    <h2 style="font-size:1rem;margin-bottom:12px;color:#94a3b8;">오늘 먹은 음식</h2>
+    <div id="added-foods">
+      <div class="history-empty">음식을 추가해주세요</div>
+    </div>
+    <div class="meal-total" id="meal-total" style="display:none;">
+      <h3>총 영양소</h3>
+      <div class="totals">
+        <div><div class="v" id="total-cal" style="color:#22c55e">0</div><div class="l">kcal</div></div>
+        <div><div class="v" id="total-protein" style="color:#f97316">0</div><div class="l">단백질(g)</div></div>
+        <div><div class="v" id="total-fat" style="color:#eab308">0</div><div class="l">지방(g)</div></div>
+        <div><div class="v" id="total-carbs" style="color:#22c55e">0</div><div class="l">탄수화물(g)</div></div>
+        <div><div class="v" id="total-fiber" style="color:#a855f7">0</div><div class="l">식이섬유(g)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-card history">
+    <h2>📋 저장된 식단 기록</h2>
+    <div id="history-list"><div class="history-empty">아직 기록이 없습니다</div></div>
+  </div>
+</div>
+
+<script>
+// ── Korean food nutrition database ──
+const FOOD_DB = [
+  // 밥류
+  { name:'쌀밥', cal:272, protein:5.6, fat:0.6, carbs:60.4, fiber:0.3, sugar:0, unit:'1공기(200g)' },
+  { name:'잡곡밥', cal:260, protein:6.0, fat:1.0, carbs:57.0, fiber:2.0, sugar:0, unit:'1공기(200g)' },
+  { name:'현미밥', cal:258, protein:5.5, fat:1.2, carbs:56.0, fiber:2.5, sugar:0, unit:'1공기(200g)' },
+  { name:'볶음밥', cal:520, protein:14.0, fat:15.0, carbs:80.0, fiber:1.5, sugar:2.0, unit:'1인분(350g)' },
+  { name:'김밥', cal:330, protein:10.0, fat:8.0, carbs:55.0, fiber:1.5, sugar:3.0, unit:'1줄(200g)' },
+  { name:'주먹밥', cal:165, protein:5.0, fat:2.5, carbs:32.0, fiber:0.5, sugar:0.5, unit:'1개(100g)' },
+  { name:'오니기리', cal:180, protein:4.5, fat:2.0, carbs:36.0, fiber:0.5, sugar:0.5, unit:'1개(100g)' },
+  // 국/찌개류
+  { name:'된장찌개', cal:80, protein:6.0, fat:4.0, carbs:5.0, fiber:2.0, sugar:2.0, unit:'1인분(300g)' },
+  { name:'김치찌개', cal:120, protein:8.0, fat:7.0, carbs:6.0, fiber:1.5, sugar:2.0, unit:'1인분(300g)' },
+  { name:'순두부찌개', cal:150, protein:12.0, fat:9.0, carbs:6.0, fiber:1.0, sugar:1.5, unit:'1인분(400g)' },
+  { name:'미역국', cal:60, protein:4.0, fat:1.5, carbs:8.0, fiber:1.0, sugar:0.5, unit:'1인분(300g)' },
+  { name:'삼계탕', cal:700, protein:45.0, fat:35.0, carbs:30.0, fiber:0.5, sugar:0, unit:'1인분' },
+  { name:'갈비탕', cal:500, protein:30.0, fat:25.0, carbs:15.0, fiber:0.5, sugar:0, unit:'1인분' },
+  { name:'육개장', cal:250, protein:20.0, fat:12.0, carbs:10.0, fiber:1.0, sugar:1.0, unit:'1인분(400g)' },
+  { name:'설렁탕', cal:350, protein:18.0, fat:20.0, carbs:15.0, fiber:0.5, sugar:0, unit:'1인분' },
+  // 면류
+  { name:'라면', cal:500, protein:12.0, fat:18.0, carbs:72.0, fiber:2.0, sugar:3.0, unit:'1봉지' },
+  { name:'진라면', cal:505, protein:12.0, fat:18.0, carbs:73.0, fiber:2.0, sugar:3.0, unit:'1봉지' },
+  { name:'신라면', cal:510, protein:13.0, fat:18.0, carbs:73.0, fiber:2.0, sugar:3.0, unit:'1봉지' },
+  { name:'자장면', cal:650, protein:18.0, fat:22.0, carbs:92.0, fiber:3.0, sugar:8.0, unit:'1인분' },
+  { name:'짬뽕', cal:550, protein:20.0, fat:18.0, carbs:75.0, fiber:3.0, sugar:4.0, unit:'1인분' },
+  { name:'우동', cal:350, protein:12.0, fat:8.0, carbs:58.0, fiber:2.0, sugar:2.0, unit:'1인분' },
+  { name:'냉면', cal:480, protein:15.0, fat:10.0, carbs:82.0, fiber:1.5, sugar:10.0, unit:'1인분' },
+  { name:'잔치국수', cal:350, protein:12.0, fat:6.0, carbs:62.0, fiber:2.0, sugar:2.0, unit:'1인분' },
+  { name:'칼국수', cal:380, protein:14.0, fat:8.0, carbs:64.0, fiber:2.5, sugar:2.0, unit:'1인분' },
+  { name:'막국수', cal:400, protein:12.0, fat:8.0, carbs:72.0, fiber:1.5, sugar:12.0, unit:'1인분' },
+  { name:'비빔국수', cal:420, protein:13.0, fat:12.0, carbs:66.0, fiber:2.0, sugar:10.0, unit:'1인분' },
+  { name:'파스타', cal:450, protein:15.0, fat:14.0, carbs:65.0, fiber:3.0, sugar:4.0, unit:'1인분' },
+  { name:'스파게티', cal:480, protein:16.0, fat:16.0, carbs:68.0, fiber:3.0, sugar:6.0, unit:'1인분' },
+  // 반찬류
+  { name:'배추김치', cal:20, protein:1.5, fat:0.2, carbs:4.0, fiber:2.0, sugar:1.5, unit:'100g' },
+  { name:'깍두기', cal:22, protein:1.5, fat:0.2, carbs:4.5, fiber:2.0, sugar:1.5, unit:'100g' },
+  { name:'겉절이', cal:30, protein:2.0, fat:0.5, carbs:5.0, fiber:2.0, sugar:2.0, unit:'100g' },
+  { name:'시금치나물', cal:45, protein:4.0, fat:2.0, carbs:4.0, fiber:2.0, sugar:0.5, unit:'100g' },
+  { name:'콩나물', cal:30, protein:3.0, fat:1.0, carbs:3.0, fiber:1.5, sugar:0.5, unit:'100g' },
+  { name:'고사리나물', cal:40, protein:3.0, fat:1.5, carbs:5.0, fiber:2.5, sugar:0.5, unit:'100g' },
+  { name:'무나물', cal:35, protein:2.0, fat:1.5, carbs:4.5, fiber:1.5, sugar:1.0, unit:'100g' },
+  { name:'계란말이', cal:120, protein:10.0, fat:8.0, carbs:2.0, fiber:0, sugar:0.5, unit:'1인분' },
+  { name:'두부', cal:80, protein:8.0, fat:4.5, carbs:2.0, fiber:1.0, sugar:0.5, unit:'100g' },
+  { name:'잡채', cal:200, protein:6.0, fat:8.0, carbs:28.0, fiber:2.0, sugar:6.0, unit:'1인분' },
+  // 구이/볶음류
+  { name:'불고기', cal:350, protein:28.0, fat:18.0, carbs:16.0, fiber:1.0, sugar:8.0, unit:'200g' },
+  { name:'삼겹살', cal:500, protein:25.0, fat:44.0, carbs:1.0, fiber:0, sugar:0, unit:'150g' },
+  { name:'목살', cal:400, protein:28.0, fat:32.0, carbs:1.0, fiber:0, sugar:0, unit:'150g' },
+  { name:'닭갈비', cal:400, protein:30.0, fat:20.0, carbs:20.0, fiber:2.0, sugar:8.0, unit:'1인분' },
+  { name:'제육볶음', cal:400, protein:25.0, fat:22.0, carbs:22.0, fiber:2.0, sugar:8.0, unit:'1인분' },
+  { name:'오징어볶음', cal:250, protein:20.0, fat:10.0, carbs:18.0, fiber:1.0, sugar:5.0, unit:'1인분' },
+  { name:'낙지볶음', cal:220, protein:25.0, fat:8.0, carbs:12.0, fiber:1.0, sugar:4.0, unit:'1인분' },
+  { name:'소고기볶음', cal:380, protein:30.0, fat:24.0, carbs:10.0, fiber:1.0, sugar:4.0, unit:'1인분' },
+  { name:'닭가슴살', cal:160, protein:32.0, fat:3.0, carbs:1.0, fiber:0, sugar:0, unit:'150g' },
+  // 튀김류
+  { name:'치킨(후라이드)', cal:270, protein:18.0, fat:18.0, carbs:8.0, fiber:0.5, sugar:0.5, unit:'100g' },
+  { name:'치킨(양념)', cal:290, protein:18.0, fat:16.0, carbs:14.0, fiber:0.5, sugar:8.0, unit:'100g' },
+  { name:'돈까스', cal:600, protein:30.0, fat:30.0, carbs:50.0, fiber:2.0, sugar:4.0, unit:'1인분' },
+  { name:'고구마튀김', cal:200, protein:2.0, fat:10.0, carbs:26.0, fiber:3.0, sugar:8.0, unit:'100g' },
+  { name:'김말이튀김', cal:80, protein:3.0, fat:4.0, carbs:9.0, fiber:0.5, sugar:1.0, unit:'1개' },
+  { name:'고추튀김', cal:60, protein:2.0, fat:3.5, carbs:6.0, fiber:1.0, sugar:1.0, unit:'1개' },
+  { name:'새우튀김', cal:120, protein:8.0, fat:7.0, carbs:8.0, fiber:0.5, sugar:0.5, unit:'2개' },
+  { name:'어묵튀김', cal:100, protein:5.0, fat:6.0, carbs:8.0, fiber:0.5, sugar:1.0, unit:'1개' },
+  // 분식
+  { name:'떡볶이', cal:350, protein:8.0, fat:5.0, carbs:72.0, fiber:1.5, sugar:12.0, unit:'1인분' },
+  { name:'순대', cal:250, protein:12.0, fat:10.0, carbs:28.0, fiber:1.0, sugar:2.0, unit:'1인분' },
+  { name:'튀김(야채)', cal:150, protein:4.0, fat:10.0, carbs:12.0, fiber:1.5, sugar:2.0, unit:'1접시' },
+  { name:'핫도그', cal:320, protein:12.0, fat:16.0, carbs:34.0, fiber:1.0, sugar:6.0, unit:'1개' },
+  { name:'문어빵', cal:180, protein:8.0, fat:10.0, carbs:16.0, fiber:0.5, sugar:2.0, unit:'1인분' },
+  // 패스트푸드
+  { name:'햄버거', cal:500, protein:25.0, fat:25.0, carbs:45.0, fiber:2.0, sugar:8.0, unit:'1개' },
+  { name:'치즈버거', cal:550, protein:28.0, fat:28.0, carbs:48.0, fiber:2.0, sugar:9.0, unit:'1개' },
+  { name:'감자튀김', cal:320, protein:4.0, fat:16.0, carbs:40.0, fiber:3.0, sugar:1.0, unit:'중간' },
+  { name:'치킨너겟', cal:250, protein:15.0, fat:15.0, carbs:15.0, fiber:0.5, sugar:1.0, unit:'6조각' },
+  { name:'피자', cal:320, protein:14.0, fat:12.0, carbs:40.0, fiber:2.0, sugar:4.0, unit:'1조각' },
+  // 디저트/간식
+  { name:'빵(식빵)', cal:250, protein:8.0, fat:4.0, carbs:47.0, fiber:2.0, sugar:5.0, unit:'1조각' },
+  { name:'크루아상', cal:300, protein:6.0, fat:18.0, carbs:30.0, fiber:1.5, sugar:8.0, unit:'1개' },
+  { name:'케이크', cal:350, protein:5.0, fat:18.0, carbs:44.0, fiber:1.0, sugar:28.0, unit:'1조각' },
+  { name:'도넛', cal:280, protein:4.0, fat:15.0, carbs:33.0, fiber:1.0, sugar:14.0, unit:'1개' },
+  { name:'마카롱', cal:80, protein:1.0, fat:4.0, carbs:10.0, fiber:0.2, sugar:8.0, unit:'1개' },
+  { name:'아이스크림', cal:200, protein:4.0, fat:10.0, carbs:24.0, fiber:0, sugar:20.0, unit:'1컵' },
+  { name:'와플', cal:280, protein:6.0, fat:12.0, carbs:38.0, fiber:1.5, sugar:12.0, unit:'1개' },
+  { name:'팥빙수', cal:350, protein:8.0, fat:5.0, carbs:75.0, fiber:3.0, sugar:50.0, unit:'1인분' },
+  { name:'호떡', cal:220, protein:4.0, fat:8.0, carbs:36.0, fiber:1.0, sugar:15.0, unit:'1개' },
+  { name:'약과', cal:120, protein:2.0, fat:5.0, carbs:18.0, fiber:0.5, sugar:10.0, unit:'1개' },
+  { name:'초콜릿', cal:150, protein:2.0, fat:10.0, carbs:15.0, fiber:1.0, sugar:12.0, unit:'50g' },
+  { name:'감자칩', cal:270, protein:3.0, fat:18.0, carbs:26.0, fiber:2.0, sugar:1.0, unit:'50g' },
+  { name:'쿠키', cal:150, protein:2.0, fat:7.0, carbs:20.0, fiber:0.5, sugar:10.0, unit:'2개' },
+  // 전/부침
+  { name:'파전', cal:250, protein:8.0, fat:12.0, carbs:28.0, fiber:2.0, sugar:2.0, unit:'1인분' },
+  { name:'김치전', cal:220, protein:6.0, fat:10.0, carbs:28.0, fiber:2.0, sugar:3.0, unit:'1인분' },
+  { name:'빈대떡', cal:280, protein:10.0, fat:12.0, carbs:34.0, fiber:3.0, sugar:2.0, unit:'1인분' },
+  { name:'호박전', cal:120, protein:4.0, fat:6.0, carbs:14.0, fiber:1.0, sugar:3.0, unit:'1인분' },
+  { name:'동그랑땡', cal:180, protein:12.0, fat:10.0, carbs:10.0, fiber:1.0, sugar:1.0, unit:'1인분' },
+  // 찜
+  { name:'김치찜', cal:250, protein:20.0, fat:14.0, carbs:12.0, fiber:2.0, sugar:3.0, unit:'1인분' },
+  { name:'갈비찜', cal:450, protein:35.0, fat:28.0, carbs:12.0, fiber:1.0, sugar:5.0, unit:'1인분' },
+  { name:'돼지족발', cal:300, protein:20.0, fat:22.0, carbs:4.0, fiber:0.5, sugar:2.0, unit:'100g' },
+  { name:'편육', cal:180, protein:25.0, fat:8.0, carbs:2.0, fiber:0, sugar:0, unit:'100g' },
+  // 회/초밥
+  { name:'초밥', cal:350, protein:20.0, fat:8.0, carbs:50.0, fiber:1.0, sugar:6.0, unit:'1인분(8pc)' },
+  { name:'연어초밥', cal:380, protein:22.0, fat:12.0, carbs:48.0, fiber:0.5, sugar:5.0, unit:'1인분(8pc)' },
+  { name:'회(모듬)', cal:200, protein:35.0, fat:5.0, carbs:3.0, fiber:0, sugar:0, unit:'1인분' },
+  { name:'연어회', cal:180, protein:25.0, fat:8.0, carbs:1.0, fiber:0, sugar:0, unit:'100g' },
+  // 찌개/전골
+  { name:'부대찌개', cal:350, protein:20.0, fat:22.0, carbs:18.0, fiber:2.0, sugar:4.0, unit:'1인분' },
+  { name:'곱창전골', cal:500, protein:28.0, fat:38.0, carbs:10.0, fiber:1.0, sugar:2.0, unit:'1인분' },
+  // 양식
+  { name:'스테이크', cal:450, protein:40.0, fat:30.0, carbs:2.0, fiber:0, sugar:0, unit:'200g' },
+  { name:'오므라이스', cal:550, protein:18.0, fat:16.0, carbs:80.0, fiber:1.5, sugar:4.0, unit:'1인분' },
+  { name:'카레라이스', cal:550, protein:15.0, fat:18.0, carbs:82.0, fiber:3.0, sugar:6.0, unit:'1인분' },
+  // 음료
+  { name:'아메리카노', cal:10, protein:0.5, fat:0, carbs:2.0, fiber:0, sugar:0, unit:'1잔' },
+  { name:'카페라떼', cal:150, protein:7.0, fat:8.0, carbs:14.0, fiber:0, sugar:10.0, unit:'1잔' },
+  { name:'카푸치노', cal:120, protein:6.0, fat:6.0, carbs:12.0, fiber:0, sugar:8.0, unit:'1잔' },
+  { name:'프라푸치노', cal:300, protein:4.0, fat:10.0, carbs:48.0, fiber:0, sugar:40.0, unit:'1잔' },
+  { name:'스무디', cal:250, protein:3.0, fat:2.0, carbs:55.0, fiber:3.0, sugar:45.0, unit:'1잔' },
+  { name:'콜라', cal:140, protein:0, fat:0, carbs:35.0, fiber:0, sugar:35.0, unit:'1캔(355ml)' },
+  { name:'사이다', cal:135, protein:0, fat:0, carbs:34.0, fiber:0, sugar:34.0, unit:'1캔(355ml)' },
+  { name:'오렌지주스', cal:120, protein:1.5, fat:0.5, carbs:28.0, fiber:0.5, sugar:25.0, unit:'1잔' },
+  { name:'우유', cal:125, protein:6.0, fat:5.0, carbs:10.0, fiber:0, sugar:10.0, unit:'1잔(200ml)' },
+  { name:'두유', cal:100, protein:6.0, fat:4.0, carbs:10.0, fiber:1.0, sugar:5.0, unit:'1잔(200ml)' },
+  { name:'요구르트', cal:90, protein:3.0, fat:2.0, carbs:16.0, fiber:0, sugar:14.0, unit:'1개' },
+  // 주류
+  { name:'맥주', cal:150, protein:1.5, fat:0, carbs:11.0, fiber:0, sugar:0, unit:'1캔(355ml)' },
+  { name:'소주', cal:80, protein:0, fat:0, carbs:1.0, fiber:0, sugar:0, unit:'1잔(50ml)' },
+  { name:'막걸리', cal:130, protein:2.0, fat:0, carbs:15.0, fiber:0.5, sugar:10.0, unit:'1잔(200ml)' },
+  { name:'와인(레드)', cal:125, protein:0.1, fat:0, carbs:4.0, fiber:0, sugar:1.0, unit:'1잔(150ml)' },
+  { name:'와인(화이트)', cal:120, protein:0.1, fat:0, carbs:3.0, fiber:0, sugar:1.0, unit:'1잔(150ml)' },
+  { name:'양주', cal:110, protein:0, fat:0, carbs:0, fiber:0, sugar:0, unit:'1잔(45ml)' },
+  // 기타
+  { name:'샐러드', cal:80, protein:3.0, fat:2.0, carbs:14.0, fiber:4.0, sugar:6.0, unit:'1접시' },
+  { name:'샌드위치', cal:350, protein:15.0, fat:14.0, carbs:42.0, fiber:3.0, sugar:6.0, unit:'1개' },
+  { name:'토스트', cal:280, protein:10.0, fat:12.0, carbs:34.0, fiber:2.0, sugar:6.0, unit:'1개' },
+  { name:'떡', cal:180, protein:4.0, fat:2.0, carbs:38.0, fiber:1.0, sugar:10.0, unit:'2개' },
+  { name:'김밥(참치)', cal:380, protein:12.0, fat:10.0, carbs:58.0, fiber:1.5, sugar:3.0, unit:'1줄' },
+];
+FOOD_DB.sort((a,b) => a.name.localeCompare(b.name));
+
+// ── State ──
+let addedFoods = []; // { name, cal, protein, fat, carbs, fiber, sugar, serving }
+let history = JSON.parse(localStorage.getItem('food_history') || '[]');
+let selectedFood = null;
+let photoDataURL = null;
+
+const foodInput = document.getElementById('food-input');
+const suggestions = document.getElementById('suggestions');
+const servingInput = document.getElementById('serving-input');
+const btnAdd = document.getElementById('btn-add');
+const btnAI = document.getElementById('btn-ai');
+const photoInput = document.getElementById('photo-input');
+const photoBox = document.getElementById('photo-box');
+const photoHint = document.getElementById('photo-hint');
+const removePhotoBtn = document.getElementById('remove-photo');
+const addedFoodsEl = document.getElementById('added-foods');
+const mealTotal = document.getElementById('meal-total');
+
+// ── Autocomplete ──
+foodInput.addEventListener('input', () => {
+  const q = foodInput.value.trim().toLowerCase();
+  if (!q) { suggestions.style.display = 'none'; selectedFood = null; return; }
+  const matches = FOOD_DB.filter(f => f.name.includes(q)).slice(0, 10);
+  if (!matches.length) { suggestions.style.display = 'none'; return; }
+  suggestions.innerHTML = matches.map(f => `<div data-name="${f.name}">${f.name} <span style="color:#64748b;font-size:0.8rem">${f.cal}kcal / ${f.unit}</span></div>`).join('');
+  suggestions.style.display = 'block';
+  suggestions.querySelectorAll('div').forEach(el => {
+    el.addEventListener('click', () => {
+      selectFood(el.dataset.name);
+    });
+  });
+});
+
+foodInput.addEventListener('blur', () => setTimeout(() => suggestions.style.display = 'none', 200));
+foodInput.addEventListener('focus', () => { if (foodInput.value) foodInput.dispatchEvent(new Event('input')); });
+
+function selectFood(name) {
+  foodInput.value = name;
+  selectedFood = FOOD_DB.find(f => f.name === name) || null;
+  suggestions.style.display = 'none';
+}
+
+// ── Photo ──
+photoInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    photoDataURL = ev.target.result;
+    photoBox.style.backgroundImage = `url(${photoDataURL})`;
+    photoBox.classList.add('has-photo');
+    photoHint.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
+
+function removePhoto() {
+  photoDataURL = null;
+  photoInput.value = '';
+  photoBox.style.backgroundImage = '';
+  photoBox.classList.remove('has-photo');
+  photoHint.style.display = 'block';
+}
+
+// ── Add food ──
+btnAdd.addEventListener('click', () => {
+  if (!selectedFood) {
+    if (!foodInput.value.trim()) return alert('음식 이름을 입력하세요');
+    // partial match
+    const match = FOOD_DB.find(f => f.name === foodInput.value.trim());
+    if (!match) return alert(`"${foodInput.value.trim()}" 을(를) DB에서 찾을 수 없습니다`);
+    selectedFood = match;
+  }
+  const serving = parseFloat(servingInput.value);
+  const food = {
+    name: selectedFood.name,
+    cal: Math.round(selectedFood.cal * serving),
+    protein: Math.round(selectedFood.protein * serving * 10) / 10,
+    fat: Math.round(selectedFood.fat * serving * 10) / 10,
+    carbs: Math.round(selectedFood.carbs * serving * 10) / 10,
+    fiber: Math.round(selectedFood.fiber * serving * 10) / 10,
+    sugar: Math.round(selectedFood.sugar * serving * 10) / 10,
+    serving
+  };
+  addedFoods.push(food);
+  renderAddedFoods();
+  foodInput.value = '';
+  selectedFood = null;
+  suggestions.style.display = 'none';
+});
+
+function renderAddedFoods() {
+  if (!addedFoods.length) {
+    addedFoodsEl.innerHTML = '<div class="history-empty">음식을 추가해주세요</div>';
+    mealTotal.style.display = 'none';
+    return;
+  }
+  mealTotal.style.display = 'block';
+  addedFoodsEl.innerHTML = addedFoods.map((f, i) => `
+    <div class="added-food">
+      <div class="name">${f.name} <span style="color:#64748b;font-size:0.8rem">(${f.serving}x)</span></div>
+      <div><span style="color:#22c55e">${f.cal}kcal</span> <span class="remove" onclick="removeFood(${i})">삭제</span></div>
+    </div>
+  `).join('');
+
+  const sums = addedFoods.reduce((a, f) => ({
+    cal: a.cal + f.cal,
+    protein: a.protein + f.protein,
+    fat: a.fat + f.fat,
+    carbs: a.carbs + f.carbs,
+    fiber: a.fiber + f.fiber
+  }), { cal:0, protein:0, fat:0, carbs:0, fiber:0 });
+
+  document.getElementById('total-cal').textContent = sums.cal;
+  document.getElementById('total-protein').textContent = Math.round(sums.protein * 10) / 10;
+  document.getElementById('total-fat').textContent = Math.round(sums.fat * 10) / 10;
+  document.getElementById('total-carbs').textContent = Math.round(sums.carbs * 10) / 10;
+  document.getElementById('total-fiber').textContent = Math.round(sums.fiber * 10) / 10;
+}
+
+function removeFood(i) {
+  addedFoods.splice(i, 1);
+  renderAddedFoods();
+}
+
+// ── Save meal ──
+function saveMeal() {
+  if (!addedFoods.length) return;
+  const sums = addedFoods.reduce((a, f) => ({
+    cal: a.cal + f.cal, protein: a.protein + f.protein,
+    fat: a.fat + f.fat, carbs: a.carbs + f.carbs
+  }), { cal:0, protein:0, fat:0, carbs:0 });
+  const entry = {
+    time: new Date().toISOString(),
+    foods: [...addedFoods],
+    totalCal: sums.cal, totalProtein: sums.protein, totalFat: sums.fat, totalCarbs: sums.carbs
+  };
+  history.unshift(entry);
+  if (history.length > 100) history = history.slice(0, 100);
+  localStorage.setItem('food_history', JSON.stringify(history));
+  renderHistory();
+}
+
+// ── History ──
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (!history.length) { el.innerHTML = '<div class="history-empty">아직 기록이 없습니다</div>'; return; }
+  el.innerHTML = history.map(h => `
+    <div class="history-entry">
+      <div><span class="time">${new Date(h.time).toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span> ${h.foods.map(f => f.name).join(', ')}</div>
+      <div class="cals">${h.totalCal}kcal</div>
+    </div>
+  `).join('');
+}
+renderHistory();
+
+// ── AI auto-detect (Hugging Face free inference) ──
+btnAI.addEventListener('click', async () => {
+  if (!photoDataURL) return alert('먼저 사진을 업로드하세요');
+  btnAI.disabled = true;
+  btnAI.textContent = '분석 중...';
+
+  // Convert base64 to blob
+  const res = await fetch(photoDataURL);
+  const blob = await res.blob();
+
+  try {
+    // Use Hugging Face free inference API with nateraw/food model
+    const hfRes = await fetch('https://api-inference.huggingface.co/models/nateraw/food', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: blob
+    });
+    if (!hfRes.ok) throw new Error(`API error ${hfRes.status}: ${await hfRes.text()}`);
+    const data = await hfRes.json();
+    if (!data.length) throw new Error('No results');
+    const top = data[0];
+    const label = top.label.replace(/_/g, ' ');
+    const score = (top.score * 100).toFixed(1);
+    foodInput.value = label;
+    selectedFood = null; // force partial match
+    const match = FOOD_DB.find(f => f.name.includes(label.split(' ')[0]));
+    if (match) {
+      selectedFood = match;
+      foodInput.value = match.name;
+    } else {
+      // Try closest match
+      const words = label.toLowerCase().split(' ');
+      const best = FOOD_DB.reduce((a, f) => {
+        const score = words.filter(w => f.name.includes(w)).length;
+        return score > a.score ? { f, score } : a;
+      }, { f: null, score: 0 });
+      if (best.f && best.score > 0) {
+        selectedFood = best.f;
+        foodInput.value = best.f.name;
+      }
+    }
+    alert(`AI 추정: ${label} (${score}%)\n가장 가까운 DB 음식: ${foodInput.value}`);
+  } catch (e) {
+    alert(`AI 인식 실패: ${e.message}\n직접 음식 이름을 입력해주세요`);
+  }
+  btnAI.disabled = false;
+  btnAI.textContent = '🤖 AI 인식';
+});
+
+// ── Keyboard shortcut ──
+foodInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && selectedFood) btnAdd.click();
+});
+
+// ── Save on unload ──
+if (addedFoods.length) saveMeal();
+// Also save periodically
+setInterval(() => { if (addedFoods.length) saveMeal(); }, 30000);
+</script>
+</body>
+</html>
