@@ -1,0 +1,9 @@
+# 자세 교정 - 실시간 피드백
+
+> 웹캠으로 자세 분석 · 결과는 서버에 저장되지 않습니다
+
+Canonical URL: https://flffkaos-pixel.github.io/fitcheck-web
+Language: ko
+
+## Pages
+- https://flffkaos-pixel.github.io/fitcheck-web/ : 자세 교정 - 실시간 피드백
